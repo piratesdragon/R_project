@@ -1,0 +1,107 @@
+---
+title: "Предсказание оценки книжного отзыва"
+author: "Мария Чепель, ДПО Компьютерная лингвистика"
+date: "2022-07-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r include=FALSE}
+install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+install.packages("plotly", repos = "http://cran.us.r-project.org")
+
+library(plotly)  
+library("tidyverse")
+
+library(readr)
+library(magrittr)
+
+library(dplyr)
+library(psych)
+install.packages("apa", repos = "http://cran.us.r-project.org")
+library(apa)
+book <- read.csv("C:\\Users\\marus\\Downloads\\everything_with_clean_values.csv",encoding='UTF-8')
+book <- book[,1:6]
+
+```
+
+## Проект по анализу книжных рецензий
+
+В качестве материала для работы я собрала рецензии с сайта fantlab.ru. Данные, представленные в формате таблице, можно видеть ниже:
+
+```{r echo=TRUE}
+DT::datatable(book)
+```
+Как можно увидеть, в таблице **6 столбцов**: 4 числовых (общий рейтинг книги, количество читателей, год публикации и пользовательская оценка) и 2 нечисловых (название и текст рецензии).
+
+```{r echo=TRUE}
+summary(book)
+```
+Хотя в первую очередь мне был важен текст рецензии, который я в дальнейшем предобрабатывала и векторизовала, мне было интересно проверить, влияют ли другие переменные на оценку.
+
+Моя **гипотеза** заключается в том, что люди обычно оценивают старые книги выше, чем новые.
+
+Для начала посмотрим на описательные статистики - summary по столбцам с годом публикации и с пользовательской оценкой.
+
+```{r}
+summary(book$Year)
+```
+Средний год издания – 1977, медианный – 1985.
+Медианное значение будет в дальнейшем использоваться для разделения на «старые» и «новые» книги
+
+```{r}
+summary(book$Score)
+```
+Как видно из статистики, в пользовательских оценках есть большой перекос в сторону положительных оценок: 75% оценок равны 6 и более.  
+
+
+Чтобы проверить гипотезу, проведем корреляционный тест:
+```{r}
+cor.test(book$Score,book$Year)
+```
+```{r}
+apa::cor_apa(cor.test(book$Score,book$Year))
+```
+
+Т.к. P<.001, можно отбросить нулевую гипотезу о том, что корреляция равна нулю.
+Корреляция отрицательная, значит, существует обратная зависимость между пользовательской оценкой и годом публикации.
+
+Для проведения t-test сначала разделим наш датасет на две части: старые книги (до 1985 г) и новые книги (после 1985 г). Т.к. значения старых и новых книг не связаны между собой, paired = FALSE.
+
+
+```{r}
+books_old <- book %>%
+  filter(Year <= 1985)
+
+books_new <- book %>%
+  filter(Year > 1985)
+
+
+t_test(books_old$Score[1:nrow(books_new)], books_new$Score, paired = FALSE)
+
+```
+```{r}
+apa::t_apa(t_test(books_old$Score[1:nrow(books_new)], books_new$Score, paired = FALSE))
+```
+Т.к. P<.001, а доверительный интервал не включает в себя 0, можно отбросить нулевую гипотезу о том, что средние оценки на старые и новые книги равны.
+
+Чтобы визуализировать полученные данные, построим график:
+
+```{r echo=TRUE}
+mean_year <- round(mean(book$Year))
+
+books_plot  <- ggplot(book, aes(x= Score, y = Year))+
+  geom_boxplot(size = 0.5, color = '#CC99FF', fill = '#E5CCFF')+
+  labs(xlab = 'User\'s scores', ylab= 'Publication year', title = 'How people score books by year')+
+  scale_x_continuous(breaks=c(1:10))+
+  scale_y_continuous(breaks=sort(c(seq(from = min(book$Year), to = max(book$Year), by = 20), mean_year)))+
+  geom_hline(aes(yintercept = mean_year), linetype="dotted")+
+  geom_text(aes(0,mean_year,label = 'Mean year'), size = 2, nudge_y = 3)+
+  theme_minimal()
+ggplotly(books_plot)
+```
